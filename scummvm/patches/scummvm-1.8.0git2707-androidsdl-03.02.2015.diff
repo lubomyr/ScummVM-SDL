@@ -1,0 +1,742 @@
+diff --git a/backends/events/sdl/sdl-events.cpp b/backends/events/sdl/sdl-events.cpp
+index 284e097..6570e1c 100644
+--- a/backends/events/sdl/sdl-events.cpp
++++ b/backends/events/sdl/sdl-events.cpp
+@@ -30,6 +30,10 @@
+ #include "common/config-manager.h"
+ #include "common/textconsole.h"
+ 
++#if defined(ANDROIDSDL)
++#include <SDL_screenkeyboard.h>
++#endif
++
+ // FIXME move joystick defines out and replace with confile file options
+ // we should really allow users to map any key to a joystick button
+ #define JOY_DEADZONE 3200
+@@ -548,7 +552,22 @@ bool SdlEventSource::handleMouseButtonDown(SDL_Event &ev, Common::Event &event)
+ #endif
+ #if defined(SDL_BUTTON_MIDDLE)
+ 	else if (ev.button.button == SDL_BUTTON_MIDDLE)
++	{
+ 		event.type = Common::EVENT_MBUTTONDOWN;
++#ifdef ANDROIDSDL
++		static int show_onscreen=0;
++		if (show_onscreen==0) {
++		    SDL_ANDROID_SetScreenKeyboardShown(0);
++		    show_onscreen++;
++		}
++		else if (show_onscreen==1) {
++		    SDL_ANDROID_SetScreenKeyboardShown(1);
++		    show_onscreen++;
++		}
++		if (show_onscreen==2)
++		    show_onscreen=0;
++#endif
++	}
+ #endif
+ 	else
+ 		return false;
+@@ -749,6 +768,54 @@ bool SdlEventSource::remapKey(SDL_Event &ev, Common::Event &event) {
+ 		event.kbd.ascii = mapKey(ev.key.keysym.sym, ev.key.keysym.mod, ev.key.keysym.unicode);
+ 	}
+ #endif
++
++#ifdef ANDROIDSDL
++	if (ev.key.keysym.sym == SDLK_LCTRL) {
++		ev.key.keysym.sym = SDLK_F5;
++
++	} else if (ev.key.keysym.sym == SDLK_RCTRL) {
++		// volume down to pressing Right Mouse
++		if (ev.key.type == SDL_KEYDOWN ) {
++			event.type = Common::EVENT_LBUTTONDOWN;
++		} else {
++			event.type = Common::EVENT_LBUTTONUP;
++		}
++		processMouseEvent(event, _km.x, _km.y);
++
++		return true;
++
++	} else if (ev.key.keysym.sym == SDLK_LALT) {
++		// volume down to pressing Right Mouse
++		if (ev.key.type == SDL_KEYDOWN ) {
++			event.type = Common::EVENT_RBUTTONDOWN;
++		} else {
++			event.type = Common::EVENT_RBUTTONUP;
++		}
++		processMouseEvent(event, _km.x, _km.y);
++
++		return true;
++	} else if (ev.key.keysym.sym == SDLK_RALT) {
++		if (ev.type == SDL_KEYDOWN) {
++			_km.y_vel = -999;
++			_km.y_down_count = 1;
++		} else {
++			_km.y_vel = 0;
++			_km.y_down_count = 0;
++		}
++
++		event.type = Common::EVENT_MOUSEMOVE;
++		processMouseEvent(event, _km.x, _km.y);
++
++		return true;
++	} else {
++		// Let the events fall through if we didn't change them, this may not be the best way to
++		// set it up, but i'm not sure how sdl would like it if we let if fall through then redid it though.
++		// and yes i have an huge terminal size so i dont wrap soon enough.
++		event.type = Common::EVENT_KEYDOWN;
++		event.kbd.keycode = (Common::KeyCode)ev.key.keysym.sym;
++		event.kbd.ascii = mapKey(ev.key.keysym.sym, ev.key.keysym.mod, ev.key.keysym.unicode);
++	}
++#endif
+ 	return false;
+ }
+ 
+diff --git a/backends/vkeybd/virtual-keyboard.cpp b/backends/vkeybd/virtual-keyboard.cpp
+index ce19e9d..9bf4ff7 100644
+--- a/backends/vkeybd/virtual-keyboard.cpp
++++ b/backends/vkeybd/virtual-keyboard.cpp
+@@ -20,6 +20,10 @@
+  *
+  */
+ 
++#if defined(ANDROIDSDL)
++#include <SDL_screenkeyboard.h>
++#endif
++
+ #include "common/scummsys.h"
+ 
+ #ifdef ENABLE_VKEYBD
+@@ -232,7 +236,9 @@ void VirtualKeyboard::show() {
+ 	} else {
+ 		_kbdGUI->checkScreenChanged();
+ 	}
+-
++#ifdef ANDROIDSDL
++	SDL_ANDROID_SetScreenKeyboardShown(0);
++#endif  
+ 	switchMode(_initialMode);
+ 	_kbdGUI->run();
+ 
+@@ -256,6 +262,9 @@ void VirtualKeyboard::show() {
+ }
+ 
+ void VirtualKeyboard::close(bool submit) {
++#ifdef ANDROIDSDL
++	SDL_ANDROID_SetScreenKeyboardShown(1);
++#endif  
+ 	_submitKeys = submit;
+ 	_kbdGUI->close();
+ }
+diff --git a/configure b/configure
+index 61e82f1..aa771d2 100755
+--- a/configure
++++ b/configure
+@@ -853,6 +853,7 @@ Special configuration feature:
+                           special targets: android-arm for Android ARM
+                                            android-mips for Android MIPS
+                                            android-x86 for Android x86
++                                           androidsdl for Android with SDL backend
+                                            tizen for Samsung Tizen
+                                            caanoo for Caanoo
+                                            dingux for Dingux
+@@ -1290,6 +1291,11 @@ android-x86)
+ 	_host_cpu=i686
+ 	_host_alias=i686-linux-android
+ 	;;
++androidsdl | androidsdl-v7a)
++	_host_os=androidsdl
++	_host_cpu=arm
++	_host_alias=arm-linux-androideabi
++	;;
+ arm-riscos)
+ 	_host_os=riscos
+ 	_host_cpu=arm
+@@ -1784,7 +1790,7 @@ if test "$have_gcc" = yes ; then
+ 			case $_host_os in
+ 			# newlib-based system include files suppress non-C89 function
+ 			# declarations under __STRICT_ANSI__
+-			amigaos* | android | dreamcast | ds | gamecube | mingw* | n64 | psp | ps2 | ps3 | tizen | wii | wince )
++			amigaos* | android | androidsdl | dreamcast | ds | gamecube | mingw* | n64 | psp | ps2 | ps3 | tizen | wii | wince )
+ 				;;
+ 			*)
+ 				CXXFLAGS="$CXXFLAGS -ansi"
+@@ -1820,7 +1826,7 @@ echo $_use_cxx11
+ # However, some platforms use GNU extensions in system header files, so
+ # for these we must not use -pedantic.
+ case $_host_os in
+-android | gamecube | psp | tizen | wii | webos)
++android | androidsdl | gamecube | psp | tizen | wii | webos)
+ 	;;
+ *)
+ 	# ICC does not support pedantic, while GCC and clang do.
+@@ -2498,6 +2504,15 @@ if test -n "$_host"; then
+ 			_mt32emu=no
+ 			_timidity=no
+ 			;;
++		androidsdl  | androidsdl-v7a)
++			DEFINES="$DEFINES -DANDROIDSDL"
++			_unix=yes
++			_build_hq_scalers=yes
++			_vkeybd=yes
++			_seq_midi=no
++			_mt32emu=no
++			_timidity=no
++			;;
+ 		arm-linux|arm*-linux-gnueabi|arm-*-linux)
+ 			;;
+ 		arm-riscos|linupy)
+@@ -3057,7 +3072,7 @@ MODULES="$MODULES backends/platform/$_backend"
+ # Setup SDL specifics for SDL based backends
+ #
+ case $_backend in
+-	dingux | gph | linuxmoto | maemo | openpandora | samsungtv | sdl)
++	androidsdl | dingux | gph | linuxmoto | maemo | openpandora | samsungtv | sdl)
+ 		find_sdlconfig
+ 		INCLUDES="$INCLUDES `$_sdlconfig --prefix="$_sdlpath" --cflags`"
+ 		LIBS="$LIBS `$_sdlconfig --prefix="$_sdlpath" --libs`"
+@@ -3080,7 +3095,7 @@ esac
+ # Enable 16bit support only for backends which support it
+ #
+ case $_backend in
+-	android | dingux | dc | gph | iphone | maemo | openpandora | psp | samsungtv | sdl | tizen | webos | wii)
++	android | androidsdl | dingux | dc | gph | iphone | maemo | openpandora | psp | samsungtv | sdl | tizen | webos | wii)
+ 		if test "$_16bit" = auto ; then
+ 			_16bit=yes
+ 		else
+@@ -3140,7 +3155,7 @@ case $_host_os in
+ 	amigaos* | cygwin* | dreamcast | ds | gamecube | mingw* | n64 | ps2 | ps3 | psp | wii | wince)
+ 		_posix=no
+ 		;;
+-	android | beos* | bsd* | darwin* | freebsd* | gnu* | gph-linux | haiku* | hpux* | iphone | irix*| k*bsd*-gnu* | linux* | maemo | mint* | netbsd* | openbsd* | solaris* | sunos* | uclinux* | webos)
++	android | androidsdl | beos* | bsd* | darwin* | freebsd* | gnu* | gph-linux | haiku* | hpux* | iphone | irix*| k*bsd*-gnu* | linux* | maemo | mint* | netbsd* | openbsd* | solaris* | sunos* | uclinux* | webos)
+ 		_posix=yes
+ 		;;
+ 	os2-emx*)
+diff --git a/engines/lure/detection.cpp b/engines/lure/detection.cpp
+index a87fcf6..2b18a65 100644
+--- a/engines/lure/detection.cpp
++++ b/engines/lure/detection.cpp
+@@ -47,6 +47,9 @@ LureLanguage LureEngine::getLureLanguage() const {
+ 	case Common::DE_DEU: return LANG_DE_DEU;
+ 	case Common::ES_ESP: return LANG_ES_ESP;
+ 	case Common::EN_ANY: return LANG_EN_ANY;
++	//add ScummVM OG Edition
++	case Common::RU_RUS: return LANG_RU_RUS;
++	//add end
+ 	case Common::UNK_LANG: return LANG_UNKNOWN;
+ 	default:
+ 		error("Unknown game language");
+@@ -167,7 +170,20 @@ static const LureGameDescription gameDescriptions[] = {
+ 		},
+ 		GF_FLOPPY,
+ 	},
+-
++//add ScummVM OG Edition
++//Rusian fan translation v1.0 (Old-Games.ru)
++	{
++		{
++			"lure",
++			"",
++			AD_ENTRY1("disk1.vga", "04cdcaa9f0cadca492f7aff0c8adfe06"),
++			Common::RU_RUS,
++			Common::kPlatformDOS,
++			ADGF_NO_FLAGS,
++			GUIO0()
++		},
++		GF_FLOPPY,
++	},
+ 	{ AD_TABLE_END_MARKER, 0 }
+ };
+ 
+diff --git a/engines/lure/game.cpp b/engines/lure/game.cpp
+index efd33b6..f9e2a34 100644
+--- a/engines/lure/game.cpp
++++ b/engines/lure/game.cpp
+@@ -1000,7 +1000,9 @@ bool Game::getYN() {
+ 	if (l == Common::FR_FRA) y = Common::KEYCODE_o;
+ 	else if ((l == Common::DE_DEU) || (l == Common::NL_NLD)) y = Common::KEYCODE_j;
+ 	else if ((l == Common::ES_ESP) || (l == Common::IT_ITA)) y = Common::KEYCODE_s;
+-
++	//add ScummVM OG Edition 
++	else if (l == Common::RU_RUS) y = Common::KEYCODE_l;
++	//add end
+ 	bool vKbdFlag = g_system->hasFeature(OSystem::kFeatureVirtualKeyboard);
+ 	if (!vKbdFlag)
+ 		mouse.cursorOff();
+@@ -1018,11 +1020,21 @@ bool Game::getYN() {
+ 		while (events.pollEvent()) {
+ 			if (events.event().type == Common::EVENT_KEYDOWN) {
+ 				Common::KeyCode key = events.event().kbd.keycode;
+-				if ((key == y) || (key == Common::KEYCODE_n) ||
++				//modify ScummVM OG Edition 
++				if (l == Common::RU_RUS) {
++					if ((key == y) || (key == Common::KEYCODE_y) ||
++						(key == Common::KEYCODE_ESCAPE)) {
++						breakFlag = true;
++						result = key == y;
++					}
++				} else {				
++					if ((key == y) || (key == Common::KEYCODE_n) ||
+ 					(key == Common::KEYCODE_ESCAPE)) {
+ 					breakFlag = true;
+ 					result = key == y;
++					}
+ 				}
++				//modify end
+ 			}
+ 			if (events.event().type == Common::EVENT_LBUTTONUP) {
+ 				breakFlag = true;
+diff --git a/engines/lure/lure.h b/engines/lure/lure.h
+index 8a82993..2d81095 100644
+--- a/engines/lure/lure.h
++++ b/engines/lure/lure.h
+@@ -58,6 +58,9 @@ enum LureLanguage {
+ 	LANG_DE_DEU = 7,
+ 	LANG_ES_ESP = 17,
+ 	LANG_EN_ANY = 3,
++	//add ScummVM OG Edition
++	LANG_RU_RUS = 3,
++	//add end
+ 	LANG_UNKNOWN = -1
+ };
+ 
+diff --git a/engines/lure/menu.cpp b/engines/lure/menu.cpp
+index 8867e8a..e7efcd6 100644
+--- a/engines/lure/menu.cpp
++++ b/engines/lure/menu.cpp
+@@ -75,6 +75,9 @@ const MenuRecordLanguage menuList[] = {
+ 	{Common::FR_FRA, {{40, 90, 3, 7}, {120, 195, 13, 11}, {232, 273, 23, 13}}},
+ 	{Common::DE_DEU, {{44, 95, 1, 11}, {135, 178, 8, 23}, {232, 273, 22, 15}}},
+ 	{Common::ES_ESP, {{40, 90, 3, 8}, {120, 195, 11, 13}, {208, 281, 17, 18}}},
++	//add ScummVM OG Edition
++	{Common::RU_RUS, {{40, 87, 3, 7}, {127, 179, 13, 12}, {224, 281, 27, 10}}},
++	//add end
+ 	{Common::UNK_LANG, {{0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}}
+ };
+ 
+@@ -380,7 +383,12 @@ uint16 PopupMenu::ShowItems(Action contextAction, uint16 roomNumber) {
+ 
+ 	if (numItems == 0)
+ 		// No items, so add a 'nothing' to the statusLine
+-		strcat(room.statusLine(), "(nothing)");
++		//modify ScummVM OG Edition
++		if (LureEngine::getReference().getLanguage() == Common::RU_RUS) 
++			strcat(room.statusLine(), "(ybxtuj ytn)");
++		else			
++			strcat(room.statusLine(), "(nothing)");
++		//modify end
+ 
+ 	room.update();
+ 	screen.update();
+diff --git a/engines/queen/detection.cpp b/engines/queen/detection.cpp
+index 5a7b4c6..abcc28a 100644
+--- a/engines/queen/detection.cpp
++++ b/engines/queen/detection.cpp
+@@ -197,6 +197,19 @@ static const QueenGameDescription gameDescriptions[] = {
+ 			GUIO1(GAMEOPTION_ALT_INTRO)
+ 		},
+ 	},
++	
++	// DOS Floppy - Russian
++	{
++		{
++			"queen",
++			"Floppy",
++			AD_ENTRY1s("queen.1", "0d1c10d5c3a1bd90bc0b3859a3258093", 22677657),
++			Common::RU_RUS,
++			Common::kPlatformDOS,
++			ADGF_NO_FLAGS,
++			GUIO1(GUIO_NOSPEECH)
++		},
++	},
+ 
+ #if 0
+ 	// DOS Floppy - German
+diff --git a/engines/saga/detection_tables.h b/engines/saga/detection_tables.h
+index 2f72e7a..6ac48da 100644
+--- a/engines/saga/detection_tables.h
++++ b/engines/saga/detection_tables.h
+@@ -798,6 +798,39 @@ static const SAGAGameDescription gameDescriptions[] = {
+ 		IHNMCD_GameFonts,
+ 		NULL,
+ 	},
++	
++// I Have No Mouth And I Must Scream - Russian fan translaction v1.0 (Old-Games.ru)
++{
++	{
++		"ihnm",
++		"",
++		{
++{"musicfm.res",	GAME_MUSICFILE_FM,					"0439083e3dfdc51b486071d45872ae52", -1},
++{"musicgm.res",	GAME_MUSICFILE_GM,					"80f875a1fb384160d1f4b27166eef583", -1},
++{"scream.res",	GAME_RESOURCEFILE,					"ac00dd9e6701e8edbb49429dacbc4731", 79210049},
++{"patch.re_",	GAME_PATCHFILE | GAME_RESOURCEFILE,			"58b79e61594779513c7f2d35509fa89e", -1},
++{"scripts.res",	GAME_SCRIPTFILE,					"be38bbc5a26be809dbf39f13befebd01", -1},
++//{"sfx.res",	GAME_SOUNDFILE,					"1c610d543f32ec8b525e3f652536f269", -1},
++// There are two English versions of the game, each one with a different sfx.res file
++// Known MD5 checksums for sfx.res in the English version of the game are
++// 1c610d543f32ec8b525e3f652536f269 and 45a9a9f5d37740be24fd2ae2edf36573
++{"sfx.res",		GAME_SOUNDFILE,						NULL, -1},
++{ NULL, 0, NULL, 0}
++		},
++		Common::RU_RUS,
++		Common::kPlatformDOS,
++		ADGF_NO_FLAGS,
++		GUIO1(GUIO_NOASPECT)
++	},
++	GID_IHNM,
++	0,
++	IHNM_DEFAULT_SCENE,
++	&IHNM_Resources,
++	ARRAYSIZE(IHNMCD_GameFonts),
++	IHNMCD_GameFonts,
++	NULL,
++},
++	
+ 	// I Have No Mouth And I Must Scream - Mac English CD
+ 	{
+ 		{
+diff --git a/engines/saga/font.cpp b/engines/saga/font.cpp
+index 73d4259..4dad8c0 100644
+--- a/engines/saga/font.cpp
++++ b/engines/saga/font.cpp
+@@ -232,10 +232,15 @@ void Font::createOutline(FontData *font) {
+ }
+ 
+ int Font::translateChar(int charId) {
+-	if (charId <= 127)
+-		return charId;					// normal character
+-	else
+-		return _charMap[charId - 128];	// extended character
++	if (charId <= 127) {
++		return charId;	// normal character
++	} else {
++		if ((_vm->getLanguage() == Common::RU_RUS)&&(_vm->getGameId() == GID_IHNM)) {
++			return charId;
++		} else {
++			return _charMap[charId - 128]; // extended character
++		}
++	}
+ }
+ 
+ // Returns the horizontal length in pixels of the graphical representation
+diff --git a/engines/saga/itedata.cpp b/engines/saga/itedata.cpp
+index da70733..97a13a4 100644
+--- a/engines/saga/itedata.cpp
++++ b/engines/saga/itedata.cpp
+@@ -422,7 +422,30 @@ const char *ITEinterfaceTextStrings[][53] = {
+ 		NULL,
+ 		NULL,
+ 		"Cardango una partida guardada"
+-	}
++	},
++	
++// Russian IHNM
++{
++	NULL, NULL, NULL, NULL, NULL,
++	NULL, NULL, NULL, NULL, NULL,
++	NULL, NULL, NULL, NULL, NULL,
++	NULL, NULL, NULL, NULL, NULL,
++	NULL, NULL, NULL, NULL, NULL,
++	NULL, NULL, NULL, NULL, NULL,
++	NULL, NULL, NULL, NULL, NULL,
++	NULL, NULL, NULL, NULL, "Выйти из игры?",
++	"Load Successful!", "Введите имя записи", "Дать %s >> %s", "Использовать %s >> %s",
++	"[Новая запись]",
++	NULL,
++	NULL,
++	NULL,
++	NULL,
++	NULL,
++	NULL,
++	NULL,
++	"       Загрузка     "
++}
++
+ };
+ 
+ const RawPoint pieceOrigins[PUZZLE_PIECES] = {
+diff --git a/engines/saga/saga.cpp b/engines/saga/saga.cpp
+index 3d38b3e..b915a83 100644
+--- a/engines/saga/saga.cpp
++++ b/engines/saga/saga.cpp
+@@ -500,6 +500,9 @@ const char *SagaEngine::getTextString(int textStringId) {
+ 		case Common::ES_ESP:
+ 			lang = 3;
+ 			break;
++		case Common::RU_RUS:
++			lang = 4;
++			break;
+ 		default:
+ 			lang = 0;
+ 			break;
+diff --git a/engines/scumm/charset-fontdata.cpp b/engines/scumm/charset-fontdata.cpp
+index 3a0cd15..fcc864f 100644
+--- a/engines/scumm/charset-fontdata.cpp
++++ b/engines/scumm/charset-fontdata.cpp
+@@ -484,6 +484,73 @@ static const byte spanishCharsetDataV2[] = {
+ 	126, 10,
+ };
+ 
++// Russian MM font.
++static const byte russCharsetDataV2[] = {
++	60, 234,
++	62, 158,
++	65, 128,
++	66, 129,
++	67, 150,
++	68, 132,
++	69, 133,
++	70, 148,
++	71, 131,
++	72, 149,
++	73, 136,
++	74, 137,
++	75, 138,
++	76, 139,
++	77, 140,
++	78, 141,
++	79, 142,
++	80, 143,
++	81, 159,
++	82, 144,
++	83, 145,
++	84, 146,
++	85, 147,
++	86, 134,
++	87, 130,
++	88, 156,
++	89, 155,
++	90, 135,
++	91, 152,
++	92, 157,
++	93, 153,
++	94, 151,
++	96, 238,
++	97, 160,
++	98, 161,
++	99, 230,
++	100, 164,
++	101, 165,
++	102, 228,
++	103, 163,
++	104, 229,
++	105, 168,
++	106, 169,
++	107, 170,
++	108, 171,
++	109, 172,
++	110, 173,
++	111, 174,
++	112, 175,
++	113, 239,
++	114, 224,
++	115, 225,
++	116, 226,
++	117, 227,
++	118, 166,
++	119, 162,
++	120, 236,
++	121, 235,
++	122, 167,
++	123, 232,
++	124, 237,
++	125, 233,
++	126, 231,
++};
++
+ // Special characters
+ static const byte specialCharsetData[] = {
+ 	0x18, 0x3e, 0x60, 0x3c, 0x06, 0x7c, 0x18, 0x00,
+@@ -550,7 +617,12 @@ CharsetRendererV2::CharsetRendererV2(ScummEngine *vm, Common::Language language)
+ 		replacementChars = sizeof(spanishCharsetDataV2) / 2;
+ 		break;
+ 	case Common::RU_RUS:
+-		_fontPtr = russianCharsetDataV2;
++		if ((_vm->_game.id == GID_MANIAC) && (_vm->_game.version == 2)) {
++			replacementData = russCharsetDataV2;
++			replacementChars = sizeof(russCharsetDataV2) / 2;
++		} else {
++			_fontPtr = russianCharsetDataV2;
++		}
+ 		break;
+ 	default:
+ 		_fontPtr = englishCharsetDataV2;
+@@ -566,7 +638,11 @@ CharsetRendererV2::CharsetRendererV2(ScummEngine *vm, Common::Language language)
+ 			int ch1 = replacementData[2 * i];
+ 			int ch2 = replacementData[2 * i + 1];
+ 
+-			memcpy(const_cast<byte *>(_fontPtr) + 8 * ch1, specialCharsetData + 8 * ch2, 8);
++			if ((_vm->_game.id == GID_MANIAC) && (_vm->_game.version == 2)) {
++					memcpy(const_cast<byte *>(_fontPtr) + 8 * ch1, russianCharsetDataV2 + 8 * ch2, 8);
++			} else {
++					memcpy(const_cast<byte *>(_fontPtr) + 8 * ch1, specialCharsetData + 8 * ch2, 8);
++				}
+ 		}
+ 	} else
+ 		_deleteFontPtr = false;
+diff --git a/engines/scumm/script_v2.cpp b/engines/scumm/script_v2.cpp
+index a7ec2e6..ba4da93 100644
+--- a/engines/scumm/script_v2.cpp
++++ b/engines/scumm/script_v2.cpp
+@@ -963,6 +963,7 @@ void ScummEngine_v2::drawPreposition(int index) {
+ 			{ " ", " dans", " avec", " sur", " <" }, // French
+ 			{ " ", " in", " con", " su", " a" },     // Italian
+ 			{ " ", " en", " con", " en", " a" },     // Spanish
++			{ " ", " ", " ", " на", " " },     // Russian
+ 			};
+ 		int lang;
+ 		switch (_language) {
+@@ -978,6 +979,9 @@ void ScummEngine_v2::drawPreposition(int index) {
+ 		case Common::ES_ESP:
+ 			lang = 4;
+ 			break;
++		case Common::RU_RUS:
++			lang = 5;
++			break;
+ 		default:
+ 			lang = 0;	// Default to english
+ 		}
+diff --git a/engines/scumm/scumm-md5.h b/engines/scumm/scumm-md5.h
+index 5be18fb..2b1af7f 100644
+--- a/engines/scumm/scumm-md5.h
++++ b/engines/scumm/scumm-md5.h
+@@ -27,6 +27,7 @@ static const MD5Table md5table[] = {
+ 	{ "0557df19f046a84c2fdc63507c6616cb", "farm", "HE 72", "Demo", -1, Common::NL_NLD, Common::kPlatformWindows },
+ 	{ "055ffe4f47753e47594ac67823220c54", "puttrace", "HE 99", "", -1, Common::DE_DEU, Common::kPlatformUnknown },
+ 	{ "057c9b456dedcc4d71b991a3072a20b3", "monkey", "SEGA", "", 9465, Common::JA_JPN, Common::kPlatformSegaCD },
++	{ "06865ea0fae1aeef2d6b96d8ae7ecc41", "maniac", "V2", "V2", -1, Common::RU_RUS, Common::kPlatformDOS },	
+ 	{ "06b187468113f9ae5a400b148a847fac", "atlantis", "Floppy", "Floppy", 12075, Common::EN_ANY, Common::kPlatformMacintosh },
+ 	{ "06c3cf4f31daad8b1cd93153491db9e6", "pajama3", "", "", 79382, Common::NL_NLD, Common::kPlatformUnknown },
+ 	{ "07433205acdca3bc553d0e731588b35f", "airport", "", "", -1, Common::EN_ANY, Common::kPlatformWindows },
+diff --git a/engines/tinsel/detection_tables.h b/engines/tinsel/detection_tables.h
+index a2ea67b..dafb324 100644
+--- a/engines/tinsel/detection_tables.h
++++ b/engines/tinsel/detection_tables.h
+@@ -55,6 +55,27 @@ static const TinselGameDescription gameDescriptions[] = {
+ 
+ 	// ==== Discworld 1 entries ===============================================
+ 
++{ // Russian Discworld 1 Russian fan translaction v1.1
++{
++"dw",
++"CD",
++{
++{"dw.scn", 0, "133041bde59d05c1bf084fd6f1bdce4b", 776524},
++{"english.txt", 0, "317542cf2e50106d9c9421ddcf821e22", 221656},
++{"english.smp", 0, NULL, -1},
++{NULL, 0, NULL, 0}
++},
++Common::RU_RUS,
++Common::kPlatformDOS,
++ADGF_CD,
++GUIO1(GUIO_NOASPECT)
++},
++GID_DW1,
++0,
++GF_SCNFILES | GF_ENHANCED_AUDIO_SUPPORT,
++TINSEL_V1,
++},	
++	
+ 	{	// CD Demo V1 version, with *.gra files
+ 		{
+ 			"dw",
+diff --git a/gui/dialog.cpp b/gui/dialog.cpp
+index fa4e508..ea1657d 100644
+--- a/gui/dialog.cpp
++++ b/gui/dialog.cpp
+@@ -20,6 +20,10 @@
+  *
+  */
+ 
++#if defined(ANDROIDSDL)
++#include <SDL_screenkeyboard.h>
++#endif
++
+ #include "common/rect.h"
+ 
+ #ifdef ENABLE_KEYMAPPER
+@@ -82,6 +86,9 @@ int Dialog::runModal() {
+ void Dialog::open() {
+ 	_result = 0;
+ 	_visible = true;
++#ifdef ANDROIDSDL
++	SDL_ANDROID_SetScreenKeyboardShown(0);
++#endif
+ 	g_gui.openDialog(this);
+ 
+ 	Widget *w = _firstWidget;
+@@ -95,7 +102,9 @@ void Dialog::open() {
+ 
+ void Dialog::close() {
+ 	_visible = false;
+-
++#ifdef ANDROIDSDL
++	SDL_ANDROID_SetScreenKeyboardShown(1);
++#endif
+ 	if (_mouseWidget) {
+ 		_mouseWidget->handleMouseLeft(0);
+ 		_mouseWidget = 0;
+diff --git a/gui/saveload-dialog.cpp b/gui/saveload-dialog.cpp
+index a333c5f..626b035 100644
+--- a/gui/saveload-dialog.cpp
++++ b/gui/saveload-dialog.cpp
+@@ -20,6 +20,10 @@
+  *
+  */
+ 
++#if defined(ANDROIDSDL)
++#include <SDL_screenkeyboard.h>
++#endif
++
+ #include "gui/saveload-dialog.h"
+ #include "common/translation.h"
+ #include "common/config-manager.h"
+@@ -434,6 +438,10 @@ void SaveLoadChooserSimple::updateSelection(bool redraw) {
+ 
+ void SaveLoadChooserSimple::open() {
+ 	SaveLoadChooserDialog::open();
++	
++#ifdef ANDROIDSDL
++	SDL_ANDROID_SetScreenKeyboardShown(1);
++#endif
+ 
+ 	// Scroll the list to the last used entry.
+ 	_list->scrollTo(ConfMan.getInt("gui_saveload_last_pos"));
+@@ -943,7 +951,11 @@ const Common::String &SavenameDialog::getDescription() {
+ }
+ 
+ void SavenameDialog::open() {
++
+ 	Dialog::open();
++#ifdef ANDROIDSDL
++	SDL_ANDROID_SetScreenKeyboardShown(1);
++#endif
+ 	setResult(-1);
+ 
+ 	_title->setLabel(Common::String::format(_("Enter a description for slot %d:"), _targetSlot));
+diff --git a/ports.mk b/ports.mk
+index fdab7e2..d45cd18 100644
+--- a/ports.mk
++++ b/ports.mk
+@@ -329,5 +329,19 @@ endif
+ 	@echo Now run
+ 	@echo "\tgit commit 'DISTS: Generated Code::Blocks and MSVC project files'"
+ 
++#
++# Android pelya's SDL-backend based port
++#
++
++# Special target to create an AndroidSDL snapshot installation
++androidsdl: 
++	$(MKDIR) release
++	$(INSTALL) -c -m 644 $(DIST_FILES_THEMES) $(DIST_FILES_ENGINEDATA) release
++	$(INSTALL) -c -m 644 $(DIST_FILES_DOCS)  release
++	$(CP) $(srcdir)/backends/vkeybd/packs/vkeybd_default.zip release
++	zip -j scummvm180-git-appdata.zip release/*
++	split -d -b 1000000 scummvm180-git-appdata.zip scummvm180-git-appdata.zip0
++	$(RM) -r scummvm180-git-appdata.zip
++
+ # Mark special targets as phony
+-.PHONY: deb bundle osxsnap win32dist install uninstall
++.PHONY: deb bundle osxsnap win32dist install uninstall androidsdl

@@ -1,0 +1,279 @@
+diff --git a/backends/events/sdl/sdl-events.cpp b/backends/events/sdl/sdl-events.cpp
+index e84a8f8..9509909 100644
+--- a/backends/events/sdl/sdl-events.cpp
++++ b/backends/events/sdl/sdl-events.cpp
+@@ -747,6 +747,54 @@ bool SdlEventSource::remapKey(SDL_Event &ev, Common::Event &event) {
+ 		event.kbd.ascii = mapKey(ev.key.keysym.sym, ev.key.keysym.mod, ev.key.keysym.unicode);
+ 	}
+ #endif
++
++#ifdef ANDROIDSDL
++	if (ev.key.keysym.sym == SDLK_LCTRL) {
++		ev.key.keysym.sym = SDLK_F5;
++
++	} else if (ev.key.keysym.sym == SDLK_RCTRL) {
++		// volume down to pressing Right Mouse
++		if (ev.key.type == SDL_KEYDOWN ) {
++			event.type = Common::EVENT_LBUTTONDOWN;
++		} else {
++			event.type = Common::EVENT_LBUTTONUP;
++		}
++		processMouseEvent(event, _km.x, _km.y);
++
++		return true;
++
++	} else if (ev.key.keysym.sym == SDLK_LALT) {
++		// volume down to pressing Right Mouse
++		if (ev.key.type == SDL_KEYDOWN ) {
++			event.type = Common::EVENT_RBUTTONDOWN;
++		} else {
++			event.type = Common::EVENT_RBUTTONUP;
++		}
++		processMouseEvent(event, _km.x, _km.y);
++
++		return true;
++	} else if (ev.key.keysym.sym == SDLK_RALT) {
++		if (ev.type == SDL_KEYDOWN) {
++			_km.y_vel = -999;
++			_km.y_down_count = 1;
++		} else {
++			_km.y_vel = 0;
++			_km.y_down_count = 0;
++		}
++
++		event.type = Common::EVENT_MOUSEMOVE;
++		processMouseEvent(event, _km.x, _km.y);
++
++		return true;
++	} else {
++		// Let the events fall through if we didn't change them, this may not be the best way to
++		// set it up, but i'm not sure how sdl would like it if we let if fall through then redid it though.
++		// and yes i have an huge terminal size so i dont wrap soon enough.
++		event.type = Common::EVENT_KEYDOWN;
++		event.kbd.keycode = (Common::KeyCode)ev.key.keysym.sym;
++		event.kbd.ascii = mapKey(ev.key.keysym.sym, ev.key.keysym.mod, ev.key.keysym.unicode);
++	}
++#endif
+ 	return false;
+ }
+ 
+diff --git a/backends/vkeybd/virtual-keyboard.cpp b/backends/vkeybd/virtual-keyboard.cpp
+index 678c751..b869758 100644
+--- a/backends/vkeybd/virtual-keyboard.cpp
++++ b/backends/vkeybd/virtual-keyboard.cpp
+@@ -20,6 +20,10 @@
+  *
+  */
+ 
++#if defined(ANDROIDSDL)
++#include <SDL_screenkeyboard.h>
++#endif
++
+ #include "common/scummsys.h"
+ 
+ #ifdef ENABLE_VKEYBD
+@@ -232,7 +236,9 @@ void VirtualKeyboard::show() {
+ 	} else {
+ 		_kbdGUI->checkScreenChanged();
+ 	}
+-
++#ifdef ANDROIDSDL
++	SDL_ANDROID_SetScreenKeyboardShown(0);
++#endif  
+ 	switchMode(_initialMode);
+ 	_kbdGUI->run();
+ 
+@@ -256,6 +262,9 @@ void VirtualKeyboard::show() {
+ }
+ 
+ void VirtualKeyboard::close(bool submit) {
++#ifdef ANDROIDSDL
++	SDL_ANDROID_SetScreenKeyboardShown(1);
++#endif  
+ 	_submitKeys = submit;
+ 	_kbdGUI->close();
+ }
+diff --git a/configure b/configure
+index cb0b890..e79c2df 100755
+--- a/configure
++++ b/configure
+@@ -849,6 +849,7 @@ Fine tuning of the installation directories:
+ Special configuration feature:
+   --host=HOST             cross-compile to target HOST (arm-linux, ...)
+                           special targets: android for Android
++                                           androidsdl for Android with SDL backend
+                                            tizen for Samsung Tizen
+                                            caanoo for Caanoo
+                                            dingux for Dingux
+@@ -1274,6 +1275,11 @@ android | android-v7a | ouya)
+ 	_host_cpu=arm
+ 	_host_alias=arm-linux-androideabi
+ 	;;
++androidsdl | androidsdl-v7a)
++	_host_os=androidsdl
++	_host_cpu=arm
++	_host_alias=arm-linux-androideabi
++	;;
+ arm-riscos)
+ 	_host_os=riscos
+ 	_host_cpu=arm
+@@ -1757,7 +1763,7 @@ if test "$have_gcc" = yes ; then
+ 			case $_host_os in
+ 			# newlib-based system include files suppress non-C89 function
+ 			# declarations under __STRICT_ANSI__
+-			amigaos* | android | dreamcast | ds | gamecube | mingw* | n64 | psp | ps2 | ps3 | tizen | wii | wince )
++			amigaos* | android | androidsdl | dreamcast | ds | gamecube | mingw* | n64 | psp | ps2 | ps3 | tizen | wii | wince )
+ 				;;
+ 			*)
+ 				CXXFLAGS="$CXXFLAGS -ansi"
+@@ -1793,7 +1799,7 @@ echo $_use_cxx11
+ # However, some platforms use GNU extensions in system header files, so
+ # for these we must not use -pedantic.
+ case $_host_os in
+-android | gamecube | psp | tizen | wii | webos)
++android | androidsdl | gamecube | psp | tizen | wii | webos)
+ 	;;
+ *)
+ 	# ICC does not support pedantic, while GCC and clang do.
+@@ -2358,6 +2364,15 @@ if test -n "$_host"; then
+ 			_mt32emu=no
+ 			_timidity=no
+ 			;;
++		androidsdl  | androidsdl-v7a)
++			DEFINES="$DEFINES -DANDROIDSDL"
++			_unix=yes
++			_build_hq_scalers=yes
++			_vkeybd=yes
++			_seq_midi=no
++			_mt32emu=no
++			_timidity=no
++			;;
+ 		arm-linux|arm*-linux-gnueabi|arm-*-linux)
+ 			;;
+ 		arm-riscos|linupy)
+@@ -2882,7 +2897,7 @@ MODULES="$MODULES backends/platform/$_backend"
+ # Setup SDL specifics for SDL based backends
+ #
+ case $_backend in
+-	dingux | gph | linuxmoto | maemo | openpandora | samsungtv | sdl)
++	androidsdl | dingux | gph | linuxmoto | maemo | openpandora | samsungtv | sdl)
+ 		find_sdlconfig
+ 		INCLUDES="$INCLUDES `$_sdlconfig --prefix="$_sdlpath" --cflags`"
+ 		LIBS="$LIBS `$_sdlconfig --prefix="$_sdlpath" --libs`"
+@@ -2905,7 +2920,7 @@ esac
+ # Enable 16bit support only for backends which support it
+ #
+ case $_backend in
+-	android | dingux | dc | gph | iphone | maemo | openpandora | psp | samsungtv | sdl | tizen | webos | wii)
++	android | androidsdl | dingux | dc | gph | iphone | maemo | openpandora | psp | samsungtv | sdl | tizen | webos | wii)
+ 		if test "$_16bit" = auto ; then
+ 			_16bit=yes
+ 		else
+@@ -2965,7 +2980,7 @@ case $_host_os in
+ 	amigaos* | cygwin* | dreamcast | ds | gamecube | mingw* | n64 | ps2 | ps3 | psp | wii | wince)
+ 		_posix=no
+ 		;;
+-	android | beos* | bsd* | darwin* | freebsd* | gnu* | gph-linux | haiku* | hpux* | iphone | irix*| k*bsd*-gnu* | linux* | maemo | mint* | netbsd* | openbsd* | solaris* | sunos* | uclinux* | webos)
++	android | androidsdl | beos* | bsd* | darwin* | freebsd* | gnu* | gph-linux | haiku* | hpux* | iphone | irix*| k*bsd*-gnu* | linux* | maemo | mint* | netbsd* | openbsd* | solaris* | sunos* | uclinux* | webos)
+ 		_posix=yes
+ 		;;
+ 	os2-emx*)
+diff --git a/gui/dialog.cpp b/gui/dialog.cpp
+index ffca15b..bdf879b 100644
+--- a/gui/dialog.cpp
++++ b/gui/dialog.cpp
+@@ -19,6 +19,10 @@
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+  */
+ 
++#if defined(ANDROIDSDL)
++#include <SDL_screenkeyboard.h>
++#endif
++
+ #include "common/rect.h"
+ 
+ #ifdef ENABLE_KEYMAPPER
+@@ -81,6 +85,9 @@ int Dialog::runModal() {
+ void Dialog::open() {
+ 	_result = 0;
+ 	_visible = true;
++#ifdef ANDROIDSDL
++	SDL_ANDROID_SetScreenKeyboardShown(0);
++#endif
+ 	g_gui.openDialog(this);
+ 
+ 	Widget *w = _firstWidget;
+@@ -94,7 +101,9 @@ void Dialog::open() {
+ 
+ void Dialog::close() {
+ 	_visible = false;
+-
++#ifdef ANDROIDSDL
++	SDL_ANDROID_SetScreenKeyboardShown(1);
++#endif
+ 	if (_mouseWidget) {
+ 		_mouseWidget->handleMouseLeft(0);
+ 		_mouseWidget = 0;
+diff --git a/gui/saveload-dialog.cpp b/gui/saveload-dialog.cpp
+index 585117f..db29823 100644
+--- a/gui/saveload-dialog.cpp
++++ b/gui/saveload-dialog.cpp
+@@ -19,6 +19,10 @@
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+  */
+ 
++#if defined(ANDROIDSDL)
++#include <SDL_screenkeyboard.h>
++#endif
++
+ #include "gui/saveload-dialog.h"
+ #include "common/translation.h"
+ #include "common/config-manager.h"
+@@ -433,6 +437,10 @@ void SaveLoadChooserSimple::updateSelection(bool redraw) {
+ 
+ void SaveLoadChooserSimple::open() {
+ 	SaveLoadChooserDialog::open();
++	
++#ifdef ANDROIDSDL
++	SDL_ANDROID_SetScreenKeyboardShown(1);
++#endif
+ 
+ 	// Scroll the list to the last used entry.
+ 	_list->scrollTo(ConfMan.getInt("gui_saveload_last_pos"));
+@@ -933,7 +941,11 @@ const Common::String &SavenameDialog::getDescription() {
+ }
+ 
+ void SavenameDialog::open() {
++
+ 	Dialog::open();
++#ifdef ANDROIDSDL
++	SDL_ANDROID_SetScreenKeyboardShown(1);
++#endif
+ 	setResult(-1);
+ 
+ 	_title->setLabel(Common::String::format(_("Enter a description for slot %d:"), _targetSlot));
+diff --git a/ports.mk b/ports.mk
+index f9d0757..618d6b8 100644
+--- a/ports.mk
++++ b/ports.mk
+@@ -377,5 +377,19 @@ ps3run: $(EXECUTABLE)
+ 	make_self $(EXECUTABLE) $(EXECUTABLE).self
+ 	ps3load $(EXECUTABLE).self
+ 
++#
++# Android pelya's SDL-backend based port
++#
++
++# Special target to create an AndroidSDL snapshot installation
++androidsdl: 
++	$(MKDIR) release
++	$(INSTALL) -c -m 644 $(DIST_FILES_THEMES) $(DIST_FILES_ENGINEDATA) release
++	$(INSTALL) -c -m 644 $(DIST_FILES_DOCS)  release
++	$(CP) $(srcdir)/backends/vkeybd/packs/vkeybd_default.zip release
++	zip -j scummvm170-git-appdata.zip release/*
++	split -d -b 1000000 scummvm170-git-appdata.zip scummvm170-git-appdata.zip0
++	$(RM) -r scummvm170-git-appdata.zip
++
+ # Mark special targets as phony
+-.PHONY: deb bundle osxsnap win32dist install uninstall ps3pkg ps3run
++.PHONY: deb bundle osxsnap win32dist install uninstall ps3pkg ps3run androidsdl

@@ -1,0 +1,20 @@
+diff --git a/project/java/Globals.java b/project/java/Globals.java
+index 76de3d8..4e1efa5 100644
+--- a/project/java/Globals.java
++++ b/project/java/Globals.java
+@@ -78,11 +78,11 @@ class Globals
+ 	public static boolean PhoneHasArrowKeys = false;
+ 	public static boolean UseAccelerometerAsArrowKeys = false;
+ 	public static boolean UseTouchscreenKeyboard = true;
+-	public static int TouchscreenKeyboardSize = 1;
++	public static int TouchscreenKeyboardSize = 2;
+ 	public static final int TOUCHSCREEN_KEYBOARD_CUSTOM = 4;
+-	public static int TouchscreenKeyboardDrawSize = 1;
+-	public static int TouchscreenKeyboardTheme = 2;
+-	public static int TouchscreenKeyboardTransparency = 2;
++	public static int TouchscreenKeyboardDrawSize = 2;
++	public static int TouchscreenKeyboardTheme = 1;
++	public static int TouchscreenKeyboardTransparency = 1;
+ 	public static int AccelerometerSensitivity = 2;
+ 	public static int AccelerometerCenterPos = 2;
+ 	public static int TrackballDampening = 0;

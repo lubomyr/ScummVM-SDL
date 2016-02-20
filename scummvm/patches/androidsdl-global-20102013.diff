@@ -1,0 +1,32 @@
+diff --git a/project/java/Globals.java b/project/java/Globals.java
+index 03edeb8..5a5aeb3 100644
+--- a/project/java/Globals.java
++++ b/project/java/Globals.java
+@@ -79,11 +79,11 @@ class Globals
+ 	public static boolean PhoneHasArrowKeys = false;
+ 	public static boolean UseAccelerometerAsArrowKeys = false;
+ 	public static boolean UseTouchscreenKeyboard = true;
+-	public static int TouchscreenKeyboardSize = 1;
++	public static int TouchscreenKeyboardSize = 2;
+ 	public static final int TOUCHSCREEN_KEYBOARD_CUSTOM = 4;
+-	public static int TouchscreenKeyboardDrawSize = 1;
++	public static int TouchscreenKeyboardDrawSize = 3;
+ 	public static int TouchscreenKeyboardTheme = 2;
+-	public static int TouchscreenKeyboardTransparency = 2;
++	public static int TouchscreenKeyboardTransparency = 1;
+ 	public static int AccelerometerSensitivity = 2;
+ 	public static int AccelerometerCenterPos = 2;
+ 	public static int TrackballDampening = 0;
+@@ -95,10 +95,10 @@ class Globals
+ 	public static int RightClickTimeout = 4;
+ 	public static int RightClickMethod = AppNeedsTwoButtonMouse ? Mouse.RIGHT_CLICK_WITH_MULTITOUCH : Mouse.RIGHT_CLICK_NONE;
+ 	public static int RightClickKey = KeyEvent.KEYCODE_MENU;
+-	public static boolean MoveMouseWithJoystick = false;
++	public static boolean MoveMouseWithJoystick = true;
+ 	public static int MoveMouseWithJoystickSpeed = 0;
+ 	public static int MoveMouseWithJoystickAccel = 0;
+-	public static boolean ClickMouseWithDpad = false;
++	public static boolean ClickMouseWithDpad = true;
+ 	public static boolean RelativeMouseMovement = ForceRelativeMouseMode; // Laptop touchpad mode
+ 	public static int RelativeMouseMovementSpeed = 2;
+ 	public static int RelativeMouseMovementAccel = 0;
